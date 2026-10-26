@@ -6,16 +6,26 @@ export const TOTAL_ROUNDS = 10;
 export const MIN_RAISE = 50;
 
 export const FOODS = [
-  { name: 'Double Cheeseburger', emoji: '🍔', startingBid: 100 },
-  { name: 'Pepperoni Pizza', emoji: '🍕', startingBid: 150 },
-  { name: 'Crispy Tacos', emoji: '🌮', startingBid: 100 },
-  { name: 'Sushi Platter', emoji: '🍣', startingBid: 200 },
-  { name: 'Chocolate Cake', emoji: '🍰', startingBid: 100 },
-  { name: 'Loaded Fries', emoji: '🍟', startingBid: 75 },
-  { name: 'Ramen Bowl', emoji: '🍜', startingBid: 125 },
-  { name: 'Pancake Stack', emoji: '🥞', startingBid: 100 },
-  { name: 'Ice Cream Sundae', emoji: '🍨', startingBid: 75 },
-  { name: 'Fried Chicken Bucket', emoji: '🍗', startingBid: 175 }
+  { name: "Poori Masala", emoji: "🍛" },
+  { name: "Maggi", emoji: "🍜" },
+  { name: "Butter Naan", emoji: "🫓" },
+  { name: "Kerala Parotta", emoji: "🫓" },
+  { name: "Paani Puri", emoji: "🥙" },
+  { name: "Masala Puri", emoji: "🥣" },
+  { name: "White Sauce Pasta", emoji: "🍝" },
+  { name: "Pizza", emoji: "🍕" },
+  { name: "Burger", emoji: "🍔" },
+  { name: "French Fries", emoji: "🍟" },
+  { name: "Chicken 65", emoji: "🍗" },
+  { name: "Shawarma", emoji: "🌯" },
+  { name: "Fried Rice", emoji: "🍚" },
+  { name: "Veg Noodles", emoji: "🥡" },
+  { name: "Sandwich", emoji: "🥪" },
+  { name: "Momos", emoji: "🥟" },
+  { name: "Samosa", emoji: "🥟" },
+  { name: "Pav Bhaji", emoji: "🍞" },
+  { name: "Kothu Parotta", emoji: "🍳" },
+  { name: "Chocolate Milkshake", emoji: "🥤" },
 ];
 
 // Temporary storage: rooms exist only while the server is running.

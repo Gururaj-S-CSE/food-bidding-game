@@ -88,7 +88,7 @@ io.on('connection', socket => {
       const player = room.players.find(p => p.id === session.playerId);
       if (!player || room.turnPlayerId !== session.playerId) return fail(socket, 'It is not your turn.');
       const bid = Number(amount);
-      const minimum = room.highestBidderId ? room.currentBid + MIN_RAISE : room.currentFood.startingBid;
+      const minimum = room.highestBidderId ? room.currentBid + MIN_RAISE : 100;
       if (!Number.isSafeInteger(bid) || bid < minimum) return fail(socket, `Your bid must be at least ${minimum} coins.`);
       if (bid > player.coins) return fail(socket, 'You do not have enough coins for that bid.');
       room.currentBid = bid;
