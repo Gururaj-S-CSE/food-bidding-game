@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import http from 'node:http';
 import { Server } from 'socket.io';
-import { Room, STARTING_COINS, MIN_RAISE, makeCode, safeRoom, beginRound, finishRound } from './game.js';
+import { Room, STARTING_COINS, MIN_RAISE, FOODS, shuffleArray, generateRoomMenu, makeCode, safeRoom, beginRound, finishRound } from './game.js';
 
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -11,6 +11,7 @@ const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
 app.use(express.json());
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'food-bidding-server' }));
+app.get('/api/menu', (_req, res) => res.json({ total: FOODS.length, foods: shuffleArray(FOODS) }));
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: CLIENT_ORIGIN, methods: ['GET', 'POST'] } });
 
@@ -77,6 +78,20 @@ io.on('connection', socket => {
         await publish(room);
       });
     } catch (e) { console.error(e); fail(socket, 'Could not join room.'); }
+  });
+
+  socket.on('room:shuffle-menu', async () => {
+    const session = socketPlayer.get(socket.id);
+    if (!session) return fail(socket, 'Join a room before shuffling the menu.');
+    await withRoomLock(session.roomCode, async () => {
+      const room = await loadRoom(session.roomCode);
+      if (!room) return fail(socket, 'Room not found.');
+      if (room.status !== 'waiting') return fail(socket, 'Menu can only be shuffled in the lobby before the match begins.');
+      room.menu = generateRoomMenu();
+      room.updatedAt = new Date();
+      await room.save();
+      await publish(room);
+    }).catch(e => { console.error(e); fail(socket, 'Could not shuffle room menu.'); });
   });
 
   socket.on('bid:place', async ({ amount } = {}) => {
