@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 
 export const STARTING_COINS = 1000;
 export const TOTAL_ROUNDS = 10;
-export const MIN_RAISE = 50;
+export const MIN_RAISE = 30;
 
 export const FOODS = [
   // Biryani & Rice
