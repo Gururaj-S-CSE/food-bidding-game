@@ -9,7 +9,8 @@ import {
 import { FOODS as ALL_FOODS, CATEGORIES, shuffleArray } from './foods';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
-const MIN_RAISE = 50;
+const MIN_RAISE = 30;
+const OPENING_BID = 30;
 
 const SESSION_STORAGE_KEY = 'food_wars_active_session';
 const NAME_STORAGE_KEY = 'food_wars_player_name';
@@ -61,7 +62,7 @@ function App() {
   const [playerId, setPlayerId] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
-  const [bidAmount, setBidAmount] = useState(100);
+  const [bidAmount, setBidAmount] = useState(OPENING_BID);
   const [copied, setCopied] = useState(false);
 
   const initialSession = getStoredSession();
@@ -207,7 +208,7 @@ function App() {
   const me = room?.players?.find(p => p.id === playerId);
   const opponent = room?.players?.find(p => p.id !== playerId);
   const isMyTurn = room?.status === 'playing' && room.turnPlayerId === playerId;
-  const minBid = room?.highestBidderId ? room.currentBid + MIN_RAISE : 100;
+  const minBid = room?.highestBidderId ? room.currentBid + MIN_RAISE : OPENING_BID;
   const maxAffordable = me?.coins ?? 1000;
   const highestBidder = room?.players?.find(p => p.id === room?.highestBidderId);
   const canBid = isMyTurn && bidAmount >= minBid && bidAmount <= maxAffordable && Number.isInteger(bidAmount);
@@ -735,7 +736,7 @@ function App() {
               {room.currentFood?.description && (
                 <p className="food-desc mt-1 text-center text-xs text-stone-600 max-w-sm mx-auto">{room.currentFood.description}</p>
               )}
-              <p className="mt-2 text-center text-xs text-stone-500">Opening bid · 100 coins</p>
+              <p className="mt-2 text-center text-xs text-stone-500">Opening bid · {OPENING_BID} coins</p>
 
               <div className="bid-display mt-5">
                 <span className="text-xs font-bold uppercase tracking-[.18em] text-stone-500">CURRENT HIGHEST BID</span>
@@ -780,12 +781,12 @@ function App() {
                 </div>
 
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {[50, 100, 200].map(n => (
+                  {[30, 60, 100].map(n => (
                     <button key={n} className="quick-bid" disabled={!isMyTurn} onClick={() => setBidAmount(Math.min(maxAffordable, Math.max(minBid, bidAmount + n)))}>
                       +{n}
                     </button>
                   ))}
-                  <span className="ml-auto self-center text-xs text-stone-600">Raise by 50 min.</span>
+                  <span className="ml-auto self-center text-xs text-stone-600">Raise by {MIN_RAISE} min.</span>
                 </div>
 
                 <button className="btn-primary mt-4 w-full" onClick={placeBid} disabled={!canBid}>
@@ -851,7 +852,7 @@ function App() {
             <div className="border-t border-stone-800 p-4">
               <div className="flex items-start gap-2 text-xs leading-5 text-stone-500">
                 <CircleHelp size={15} className="mt-0.5 shrink-0" />
-                <span>Each bid must beat the last by at least 50 coins. Coins are only deducted when you win an item.</span>
+                <span>Each bid must beat the last by at least {MIN_RAISE} coins. Coins are only deducted when you win an item.</span>
               </div>
             </div>
           </section>

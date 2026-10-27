@@ -4,7 +4,7 @@ import cors from 'cors';
 import http from 'node:http';
 import crypto from 'node:crypto';
 import { Server } from 'socket.io';
-import { Room, STARTING_COINS, MIN_RAISE, FOODS, shuffleArray, generateRoomMenu, makeCode, safeRoom, beginRound, finishRound } from './game.js';
+import { Room, STARTING_COINS, MIN_RAISE, OPENING_BID, FOODS, shuffleArray, generateRoomMenu, makeCode, safeRoom, beginRound, finishRound } from './game.js';
 
 const PORT = Number(process.env.PORT || 4000);
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
@@ -131,7 +131,7 @@ io.on('connection', socket => {
       const player = room.players.find(p => p.id === session.playerId);
       if (!player || room.turnPlayerId !== session.playerId) return fail(socket, 'It is not your turn.');
       const bid = Number(amount);
-      const minimum = room.highestBidderId ? room.currentBid + MIN_RAISE : 100;
+      const minimum = room.highestBidderId ? room.currentBid + MIN_RAISE : OPENING_BID;
       if (!Number.isSafeInteger(bid) || bid < minimum) return fail(socket, `Your bid must be at least ${minimum} coins.`);
       if (bid > player.coins) return fail(socket, 'You do not have enough coins for that bid.');
       room.currentBid = bid;
