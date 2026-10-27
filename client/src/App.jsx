@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 import {
   ArrowUpRight, Check, ChefHat, CircleHelp, Copy, Crown, DoorOpen,
@@ -11,10 +11,51 @@ import { FOODS as ALL_FOODS, CATEGORIES, shuffleArray } from './foods';
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:4000';
 const MIN_RAISE = 50;
 
+const SESSION_STORAGE_KEY = 'food_wars_active_session';
+const NAME_STORAGE_KEY = 'food_wars_player_name';
+
+function getStoredSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (data && data.roomCode && data.playerId) return data;
+  } catch {}
+  return null;
+}
+
+function saveStoredSession(session) {
+  try {
+    if (session && session.roomCode && session.playerId) {
+      sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    }
+  } catch {}
+}
+
+function clearStoredSession() {
+  try {
+    sessionStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch {}
+}
+
+function getStoredName() {
+  try {
+    return localStorage.getItem(NAME_STORAGE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function saveStoredName(name) {
+  try {
+    if (name) localStorage.setItem(NAME_STORAGE_KEY, name);
+  } catch {}
+}
+
 function App() {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
-  const [name, setName] = useState('');
+  const [name, setName] = useState(() => getStoredName());
   const [joinCode, setJoinCode] = useState('');
   const [room, setRoom] = useState(null);
   const [playerId, setPlayerId] = useState('');
@@ -22,6 +63,15 @@ function App() {
   const [error, setError] = useState('');
   const [bidAmount, setBidAmount] = useState(100);
   const [copied, setCopied] = useState(false);
+
+  const initialSession = getStoredSession();
+  const sessionRef = useRef(initialSession);
+  const nameRef = useRef(name);
+  const [isReconnecting, setIsReconnecting] = useState(() => !!initialSession);
+
+  useEffect(() => {
+    nameRef.current = name;
+  }, [name]);
 
   // Menu modal and dynamic shuffle state
   const [menuOpen, setMenuOpen] = useState(false);
@@ -33,16 +83,126 @@ function App() {
   const [isSpinning, setIsSpinning] = useState(false);
 
   useEffect(() => {
-    const s = io(SERVER_URL, { transports: ['websocket', 'polling'] });
+    const s = io(SERVER_URL, {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+    });
     setSocket(s);
-    s.on('connect', () => { setConnected(true); setError(''); });
-    s.on('disconnect', () => setConnected(false));
-    s.on('room:created', ({ code, playerId: id }) => { setPlayerId(id); setNotice(`Room ${code} created. Share the code with a friend.`); });
-    s.on('room:joined', ({ code, playerId: id }) => { setPlayerId(id); setNotice(`Connected to room ${code}.`); });
-    s.on('game:state', next => { setRoom(next); setPlayerId(next.viewerId); setError(''); });
-    s.on('game:error', payload => setError(payload?.message || 'Something went wrong.'));
-    return () => s.disconnect();
+
+    s.on('connect', () => {
+      setConnected(true);
+      setError('');
+      // Auto-reconnect if session exists
+      const currentSession = sessionRef.current || getStoredSession();
+      if (currentSession?.roomCode && currentSession?.playerId) {
+        s.emit('room:reconnect', {
+          code: currentSession.roomCode,
+          playerId: currentSession.playerId
+        });
+      }
+    });
+
+    s.on('disconnect', () => {
+      setConnected(false);
+    });
+
+    s.on('room:created', ({ code, playerId: id }) => {
+      setPlayerId(id);
+      setIsReconnecting(false);
+      const session = { roomCode: code, playerId: id, playerName: nameRef.current };
+      sessionRef.current = session;
+      saveStoredSession(session);
+      setNotice(`Room ${code} created. Share the code with a friend.`);
+    });
+
+    s.on('room:joined', ({ code, playerId: id }) => {
+      setPlayerId(id);
+      setIsReconnecting(false);
+      const session = { roomCode: code, playerId: id, playerName: nameRef.current };
+      sessionRef.current = session;
+      saveStoredSession(session);
+      setNotice(`Connected to room ${code}.`);
+    });
+
+    s.on('room:reconnected', ({ code, playerId: id }) => {
+      setPlayerId(id);
+      setIsReconnecting(false);
+      const session = { roomCode: code, playerId: id, playerName: nameRef.current };
+      sessionRef.current = session;
+      saveStoredSession(session);
+      setNotice(`Reconnected to room ${code}.`);
+    });
+
+    s.on('room:reconnect-failed', ({ message }) => {
+      clearStoredSession();
+      sessionRef.current = null;
+      setIsReconnecting(false);
+      setRoom(null);
+      setPlayerId('');
+      setError(message || 'Previous session expired. Create or join a new room.');
+    });
+
+    s.on('game:state', next => {
+      setRoom(next);
+      setPlayerId(next.viewerId);
+      setIsReconnecting(false);
+      setError('');
+      if (next.code && next.viewerId) {
+        const activeSession = {
+          roomCode: next.code,
+          playerId: next.viewerId,
+          playerName: next.players?.find(p => p.id === next.viewerId)?.name || nameRef.current
+        };
+        sessionRef.current = activeSession;
+        saveStoredSession(activeSession);
+      }
+    });
+
+    s.on('game:error', payload => {
+      setIsReconnecting(false);
+      setError(payload?.message || 'Something went wrong.');
+    });
+
+    return () => {
+      s.disconnect();
+    };
   }, []);
+
+  // Handle tab visibility and focus to recover connections dropped during idle/background
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && socket) {
+        if (!socket.connected) {
+          socket.connect();
+        } else {
+          const cur = sessionRef.current || getStoredSession();
+          if (cur?.roomCode && cur?.playerId) {
+            socket.emit('room:reconnect', { code: cur.roomCode, playerId: cur.playerId });
+          }
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [socket]);
+
+  // Timeout guard for reconnecting state
+  useEffect(() => {
+    if (isReconnecting) {
+      const timer = setTimeout(() => {
+        setIsReconnecting(false);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [isReconnecting]);
 
   const me = room?.players?.find(p => p.id === playerId);
   const opponent = room?.players?.find(p => p.id !== playerId);
@@ -58,17 +218,58 @@ function App() {
 
   const sortedHistory = useMemo(() => [...(room?.bidHistory || [])].reverse(), [room?.bidHistory]);
 
+  const handleNameChange = (val) => {
+    setName(val);
+    saveStoredName(val);
+  };
+
   const createRoom = () => {
     setError(''); setNotice('');
-    if (!name.trim()) return setError('Enter your name first.');
-    socket?.emit('room:create', { name: name.trim() });
+    const trimmed = name.trim();
+    if (!trimmed) return setError('Enter your name first.');
+    saveStoredName(trimmed);
+    socket?.emit('room:create', { name: trimmed });
   };
 
   const joinRoom = () => {
     setError(''); setNotice('');
-    if (!name.trim()) return setError('Enter your name first.');
-    if (!joinCode.trim()) return setError('Enter the room code your friend shared.');
-    socket?.emit('room:join', { name: name.trim(), code: joinCode.trim().toUpperCase() });
+    const trimmedName = name.trim();
+    const trimmedCode = joinCode.trim().toUpperCase();
+    if (!trimmedName) return setError('Enter your name first.');
+    if (!trimmedCode) return setError('Enter the room code your friend shared.');
+    saveStoredName(trimmedName);
+    socket?.emit('room:join', { name: trimmedName, code: trimmedCode });
+  };
+
+  const leaveLobby = () => {
+    socket?.emit('room:leave');
+    clearStoredSession();
+    sessionRef.current = null;
+    setIsReconnecting(false);
+    setRoom(null);
+    setPlayerId('');
+    setNotice('');
+    setError('');
+  };
+
+  const backToHome = () => {
+    socket?.emit('room:leave');
+    clearStoredSession();
+    sessionRef.current = null;
+    setIsReconnecting(false);
+    setRoom(null);
+    setPlayerId('');
+    setJoinCode('');
+    setNotice('');
+    setError('');
+  };
+
+  const handleBrandHome = () => {
+    if (room) {
+      if (window.confirm('Do you want to leave your room and return to home?')) {
+        leaveLobby();
+      }
+    }
   };
 
   const placeBid = () => { setError(''); socket?.emit('bid:place', { amount: bidAmount }); };
@@ -116,12 +317,33 @@ function App() {
     return list;
   }, [shuffledFoods, selectedCategory, searchQuery]);
 
+  // Reconnecting view when user refreshed or is restoring an active room
+  if (isReconnecting && !room) {
+    return (
+      <main className="min-h-screen px-4 py-8 flex items-center justify-center">
+        <div className="panel p-8 text-center max-w-sm w-full">
+          <LoaderCircle size={36} className="animate-spin text-lime-300 mx-auto" />
+          <h2 className="mt-4 font-black text-xl">Reconnecting to table…</h2>
+          <p className="mt-2 text-xs text-stone-400">
+            Restoring your active session for room <span className="font-mono font-bold text-lime-300">{sessionRef.current?.roomCode}</span>
+          </p>
+          <button
+            className="btn-secondary mt-6 text-xs w-full py-2.5"
+            onClick={leaveLobby}
+          >
+            Cancel and Return to Lobby
+          </button>
+        </div>
+      </main>
+    );
+  }
+
   // Landing view
   if (!room) return (
     <main className="min-h-screen px-4 py-8 md:px-8">
       <div className="mx-auto max-w-6xl">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <Brand />
+          <Brand onHomeClick={handleBrandHome} />
           <div className="flex items-center gap-2">
             <button className="btn-menu-pill" onClick={() => openMenuModal('all')} title="Explore the menu">
               <UtensilsCrossed size={15} />
@@ -180,7 +402,7 @@ function App() {
               placeholder="e.g. SnackMaster"
               maxLength={20}
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => handleNameChange(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && createRoom()}
             />
 
@@ -247,7 +469,7 @@ function App() {
     <main className="min-h-screen px-4 py-8 md:px-8">
       <div className="mx-auto max-w-5xl">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <Brand />
+          <Brand onHomeClick={handleBrandHome} />
           <div className="flex items-center gap-2">
             <button className="btn-menu-pill" onClick={() => openMenuModal('match')} title="View match menu">
               <UtensilsCrossed size={15} />
@@ -320,7 +542,7 @@ function App() {
             <LoaderCircle size={16} className="animate-spin text-lime-300" /> Waiting for the second player…
           </div>
 
-          <button className="btn-ghost mt-7" onClick={() => { setRoom(null); setNotice(''); setError(''); }}>
+          <button className="btn-ghost mt-7" onClick={leaveLobby}>
             <LogOut size={15} /> Leave lobby
           </button>
         </div>
@@ -352,7 +574,7 @@ function App() {
       <main className="min-h-screen px-4 py-10">
         <div className="mx-auto max-w-4xl">
           <header className="flex flex-wrap items-center justify-between gap-3">
-            <Brand />
+            <Brand onHomeClick={handleBrandHome} />
             <div className="flex items-center gap-2">
               <button className="btn-menu-pill" onClick={() => openMenuModal('all')}>
                 <UtensilsCrossed size={15} />
@@ -399,7 +621,7 @@ function App() {
               <button className="btn-secondary" onClick={() => openMenuModal('all')}>
                 <UtensilsCrossed size={16} /> Explore All 65+ Foods
               </button>
-              <button className="btn-primary" onClick={() => { setRoom(null); setPlayerId(''); setJoinCode(''); setNotice(''); setError(''); }}>
+              <button className="btn-primary" onClick={backToHome}>
                 <RotateCcw size={17} /> Back to home
               </button>
             </div>
@@ -430,7 +652,7 @@ function App() {
     <main className="min-h-screen px-4 py-5 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <Brand />
+          <Brand onHomeClick={handleBrandHome} />
           <div className="flex flex-wrap items-center gap-2">
             <button className="btn-menu-pill" onClick={() => openMenuModal('match')} title="View all rounds & items in this auction">
               <UtensilsCrossed size={15} />
@@ -842,9 +1064,15 @@ function MenuModal({
   );
 }
 
-function Brand() {
+function Brand({ onHomeClick }) {
+  const handleClick = (e) => {
+    if (onHomeClick) {
+      e.preventDefault();
+      onHomeClick();
+    }
+  };
   return (
-    <a href="/" className="flex items-center gap-3 text-white no-underline">
+    <a href="/" onClick={handleClick} className="flex items-center gap-3 text-white no-underline">
       <span className="brand-mark"><ChefHat size={22} /></span>
       <span>
         <b className="block text-sm font-black tracking-[.12em]">FOOD WARS</b>

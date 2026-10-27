@@ -175,6 +175,10 @@ export class Room {
   static async exists({ code }) {
     return rooms.has(String(code)) ? { _id: code } : null;
   }
+
+  static async deleteOne({ code }) {
+    return rooms.delete(String(code));
+  }
 }
 
 export function safeRoom(room, viewerId) {
